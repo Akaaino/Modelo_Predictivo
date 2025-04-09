@@ -1,0 +1,809 @@
+---
+output: html_document
+date: "2025-02-05"
+---
+
+
+<style>
+  body {
+    color: blue;
+  }
+</style>
+
+<body>
+<br>
+
+<body>
+<br>
+
+
+<div style="width: 100%; background-color: white; border: 0px solid #000; padding: 10px; display: flex; flex-direction: column; align-items: center; text-align: center;">
+   <img src="https://utp.ac.pa/logo_utp.jpg" height="85" width="100" style="align-self: flex-start;">
+  <h4 style="color: black; margin: 0;"><b>Universidad Tecnológica de Panamá</b></h4><br>
+  <h5 style="color: black; margin: 0;">Maestría de Analítica de Datos</h5><br>
+  <h5 style="color: black; margin: 0;">Modelos predictivos</h5><br>
+  <h5 style="color: black; margin: 0;">Profesor: Juan Marcos Castillo</h5><br>
+  <h5 style="color: black; margin: 0;">Proyecto Final</h5> <br>
+  <h5 style="color: black; margin: 0;">Aquino Rodríguez</h5><br>
+</div>
+
+<br> <br>
+
+**Selección del Conjunto de Datos.**
+<br>
+
+**Exploración del dataset.**
+<br>
+***Se quitan lo separadores de miles para dejar los datos enteros o decimales***
+
+<br>
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+#Libreria
+
+library(ggplot2)
+library(dplyr)
+library(ggcorrplot)
+library (lubridate)
+library(tidyr)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(tidyr)
+library(scales)
+library(viridis)
+
+
+##Cargamos el Dataset
+data <- read.csv("C:/Users/Administrador/Desktop/UTP-R/Herramientas para visualización de datos/air_traffic.csv")
+
+#Se eliminan las comas
+
+data[] <- lapply(data, function(x) {
+  if (is.character(x)) {
+    # Eliminar las comas solo en columnas de tipo carácter
+    return(as.numeric(gsub(",", "", x)))
+  } else {
+    return(x)  # Si la columna no es de texto, la dejamos igual
+  }
+})
+
+
+
+head(data)
+str(data)
+summary(data)
+
+```
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Crear la función para contar los valores nulos (NA) en cada columna
+count_nuls <- function(x) {
+  # Contar la cantidad de valores nulos
+  nulls <- sum(is.na(x))
+  return(nulls)
+}
+
+# Aplicar la función para contar nulos a cada columna numérica y mostrar los resultados
+null_counts <- data %>%
+  summarise(across(everything(), ~ count_nuls(.))) %>%
+  gather(key = "Variable", value = "Nulos") %>%
+  mutate(Nulos = paste(Variable, "tiene", Nulos, "nulos"))
+
+```
+<br>
+<br>
+<br>
+
+***Se identifican si hay valores nulos***
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+# Imprimir cada mensaje de nulos en una nueva línea
+for (null_message in null_counts$Nulos) {
+  print(null_message)
+}
+
+
+# Contar los registros duplicados en Year y Month
+duplicate_count <- data %>%
+  filter(duplicated(select(., Year, Month)) | duplicated(select(., Year, Month), fromLast = TRUE)) %>%
+  nrow()
+
+```
+<br>
+<br>
+<br>
+
+***Se valida si hay registros duplicados***
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Imprimir la cantidad de duplicados
+print(paste("Cantidad de duplicados (año y mes):", duplicate_count))
+
+# Crear una nueva columna de tipo fecha combinando Year y Month
+#dataset$Fecha <- as.Date(paste(dataset$Year, dataset$Month, "01", sep = "-"))
+
+
+
+
+
+data_numeric <- data[, sapply(data, is.numeric)]
+
+# Seleccionar solo las variables deseadas
+variables_seleccionadas <- c("Dom_Pax", "Int_Pax", "Pax", 
+                             "Dom_RPM", "Int_RPM", "RPM", 
+                             "Dom_ASM", "Int_ASM", "ASM")
+
+# Filtrar los datos para seleccionar solo las columnas que nos interesan
+data_seleccionada <- data %>%
+  select(Year, all_of(variables_seleccionadas))
+
+# Convertir los datos en formato largo (long format)
+data_long <- data_seleccionada %>%
+  pivot_longer(cols = -Year,      # Pivotar todas las columnas excepto Year
+               names_to = "Variable", 
+               values_to = "Value")
+
+
+
+############
+# Seleccionar las variables de interés y Year
+flights_data <- data %>%
+  select(Year, Dom_Flt, Int_Flt, Flt)
+
+# Convertir datos a formato largo para ggplot2
+flights_long <- flights_data %>%
+  pivot_longer(cols = c(Dom_Flt, Int_Flt, Flt), names_to = "Variable", values_to = "Value")
+
+
+```
+<br>
+<br>
+<br>
+**Gráficos para ver distribución de la data**
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Gráfico de número de vuelos por año
+ggplot(flights_long, aes(x = Year, y = Value, color = Variable)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Número de Vuelos por Año",
+    x = "Año",
+    y = "Número de Vuelos",
+    color = "Tipo de Vuelo"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(labels = label_number(big_mark = ",")) # Formatear etiquetas del eje Y
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Paso 1: Agrupar y resumir los datos (por ejemplo, calcular el promedio)
+data_summary <- data_long %>%
+  group_by(Year, Variable) %>%
+  summarise(Promedio = mean(Value, na.rm = TRUE))
+
+
+# Paso 2: Crear el gráfico de barras
+ggplot(data_summary, aes(x = factor(Year), y = Promedio, fill = factor(Year))) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ Variable, scales = "free_y") +
+  labs(title = "Promedio de las Variables Seleccionadas por Año",
+       x = "Año",
+       y = "Promedio") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::label_number(scale = 1, accuracy = 1)) +
+  scale_fill_viridis_d()
+
+```
+<br>
+<br>
+<br>
+**Matriz de Correlación de la variables**
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Seleccionamos solo las columnas numéricas, excluyendo 'Year' y 'Month'
+numeric_columns <- data[, sapply(data, is.numeric)]
+numeric_columns <- numeric_columns[, !(names(numeric_columns) %in% c("Year", "Month"))]
+
+# Calcular la matriz de correlación para las variables numéricas seleccionadas
+cor_matrix <- cor(numeric_columns)
+
+# Mostrar la matriz de correlación utilizando corrplot
+library(corrplot)
+corrplot(cor_matrix,
+         method = "circle",
+         type = "upper",
+         order = "hclust",
+         tl.col = "black",
+         )
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+dataset_yearly <- data %>%
+  group_by(Year) %>%
+  summarise(Total_Dom_Pax = sum(Dom_Pax, na.rm = TRUE),
+            Total_Int_Pax = sum(Int_Pax, na.rm = TRUE),
+            Total_Pax = sum(Pax, na.rm = TRUE))  # Total de pasajeros (Dom_Pax + Int_Pax)
+
+# Crear la gráfica lineal con las tres variables (Dom_Pax, Int_Pax, Pax)
+ggplot(dataset_yearly) +
+  geom_line(aes(x = Year, y = Total_Dom_Pax, color = "Dom_Pax"), size = 1) +  # Línea azul para Dom_Pax
+  geom_line(aes(x = Year, y = Total_Int_Pax, color = "Int_Pax"), size = 1) +  # Línea roja para Int_Pax
+  geom_line(aes(x = Year, y = Total_Pax, color = "Pax"), size = 1) +  # Línea verde para Pax
+  geom_point(aes(x = Year, y = Total_Dom_Pax, color = "Dom_Pax"), size = 3) +  # Puntos azules para Dom_Pax
+  geom_point(aes(x = Year, y = Total_Int_Pax, color = "Int_Pax"), size = 3) +  # Puntos rojos para Int_Pax
+  geom_point(aes(x = Year, y = Total_Pax, color = "Pax"), size = 3) +  # Puntos verdes para Pax
+  labs(title = "Total de Pasajeros (Nacionales, Internacionales y Totales) por Año",
+       x = "Año",
+       y = "Total de Pasajeros") +
+  scale_y_continuous(labels = label_number(scale = 1, accuracy = 1)) +  # Evitar notación científica en el eje Y
+  scale_color_manual(name = "Tipo de Pasajero", 
+                     values = c("Dom_Pax" = "blue", "Int_Pax" = "red", "Pax" = "green")) +  # Colores personalizados para las tres líneas
+  theme_minimal()  # Tema limpio
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+dataset_yearly_flights <- data %>%
+  group_by(Year) %>%
+  summarise(Total_Dom_Flt = sum(Dom_Flt, na.rm = TRUE),
+            Total_Int_Flt = sum(Int_Flt, na.rm = TRUE),
+            Total_Flt = sum(Flt, na.rm = TRUE))  # Total de vuelos (Dom_Flt + Int_Flt)
+
+# Crear la gráfica lineal con las tres variables de vuelos
+ggplot(dataset_yearly_flights) +
+  geom_line(aes(x = Year, y = Total_Dom_Flt, color = "Dom_Flt"), size = 1) +  # Línea azul para Dom_Flt
+  geom_line(aes(x = Year, y = Total_Int_Flt, color = "Int_Flt"), size = 1) +  # Línea roja para Int_Flt
+  geom_line(aes(x = Year, y = Total_Flt, color = "Flt"), size = 1) +  # Línea verde para Flt
+  geom_point(aes(x = Year, y = Total_Dom_Flt, color = "Dom_Flt"), size = 3) +  # Puntos azules para Dom_Flt
+  geom_point(aes(x = Year, y = Total_Int_Flt, color = "Int_Flt"), size = 3) +  # Puntos rojos para Int_Flt
+  geom_point(aes(x = Year, y = Total_Flt, color = "Flt"), size = 3) +  # Puntos verdes para Flt
+  labs(title = "Total de Vuelos (Nacionales, Internacionales y Totales) por Año",
+       x = "Año",
+       y = "Total de Vuelos") +
+  scale_y_continuous(labels = label_number(scale = 1, accuracy = 1)) +  # Evitar notación científica en el eje Y
+  scale_color_manual(name = "Tipo de Vuelo", 
+                     values = c("Dom_Flt" = "blue", "Int_Flt" = "red", "Flt" = "green")) +  # Colores personalizados para las tres líneas
+  theme_minimal()  # Tema limpio
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+dataset_yearly_rpm <- data %>%
+  group_by(Year) %>%
+  summarise(Total_Dom_RPM = sum(Dom_RPM, na.rm = TRUE),
+            Total_Int_RPM = sum(Int_RPM, na.rm = TRUE),
+            Total_RPM = sum(RPM, na.rm = TRUE))  # Total de RPM (Dom_RPM + Int_RPM)
+
+# Crear la gráfica lineal con las tres variables de RPM
+ggplot(dataset_yearly_rpm) +
+  geom_line(aes(x = Year, y = Total_Dom_RPM, color = "Dom_RPM"), size = 1) +  # Línea azul para Dom_RPM
+  geom_line(aes(x = Year, y = Total_Int_RPM, color = "Int_RPM"), size = 1) +  # Línea roja para Int_RPM
+  geom_line(aes(x = Year, y = Total_RPM, color = "RPM"), size = 1) +  # Línea verde para RPM
+  geom_point(aes(x = Year, y = Total_Dom_RPM, color = "Dom_RPM"), size = 3) +  # Puntos azules para Dom_RPM
+  geom_point(aes(x = Year, y = Total_Int_RPM, color = "Int_RPM"), size = 3) +  # Puntos rojos para Int_RPM
+  geom_point(aes(x = Year, y = Total_RPM, color = "RPM"), size = 3) +  # Puntos verdes para RPM
+  labs(title = "Total de RPM (Nacionales, Internacional y Total) por Año",
+       x = "Año",
+       y = "Total de RPM") +
+  scale_y_continuous(labels = label_number(scale = 1, accuracy = 1)) +  # Evitar notación científica en el eje Y
+  scale_color_manual(name = "Tipo de RPM", 
+                     values = c("Dom_RPM" = "blue", "Int_RPM" = "red", "RPM" = "green")) +  # Colores personalizados para las tres líneas
+  theme_minimal()  # Tema limpio
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+dataset_yearly_asm <- data %>%
+  group_by(Year) %>%
+  summarise(Total_Dom_ASM = sum(Dom_ASM, na.rm = TRUE),
+            Total_Int_ASM = sum(Int_ASM, na.rm = TRUE),
+            Total_ASM = sum(ASM, na.rm = TRUE))  # Total de ASM (Dom_ASM + Int_ASM)
+
+
+# Crear la gráfica lineal con las tres variables de ASM
+ggplot(dataset_yearly_asm) +
+  geom_line(aes(x = Year, y = Total_Dom_ASM, color = "Dom_ASM"), size = 1) +  # Línea azul para Dom_ASM
+  geom_line(aes(x = Year, y = Total_Int_ASM, color = "Int_ASM"), size = 1) +  # Línea roja para Int_ASM
+  geom_line(aes(x = Year, y = Total_ASM, color = "ASM"), size = 1) +  # Línea verde para ASM
+  geom_point(aes(x = Year, y = Total_Dom_ASM, color = "Dom_ASM"), size = 3) +  # Puntos azules para Dom_ASM
+  geom_point(aes(x = Year, y = Total_Int_ASM, color = "Int_ASM"), size = 3) +  # Puntos rojos para Int_ASM
+  geom_point(aes(x = Year, y = Total_ASM, color = "ASM"), size = 3) +  # Puntos verdes para ASM
+  labs(title = "Total de ASM (Nacionales, Internacional y Total) por Año",
+       x = "Año",
+       y = "Total de ASM") +
+  scale_y_continuous(labels = label_number(scale = 1, accuracy = 1)) +  # Evitar notación científica en el eje Y
+  scale_color_manual(name = "Tipo de ASM", 
+                     values = c("Dom_ASM" = "blue", "Int_ASM" = "red", "ASM" = "green")) +  # Colores personalizados para las tres líneas
+  theme_minimal()  # Tema limpio
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+data <- data %>%
+  mutate(Load_Factor = (RPM / ASM) * 100)  # Calcular el Load Factor
+
+
+
+ggplot(data, aes(x = Year, y = Load_Factor)) +
+  geom_line(color = "blue", size = 1) +  # Línea azul para el Load Factor
+  geom_point(color = "blue", size = 3) +  # Puntos azules para resaltar los valores
+  labs(title = "Porcentaje de Puestos Ocupados por Año",
+       x = "Año",
+       y = "Porcentaje de Puestos Ocupados (%)") +
+  theme_minimal()  # Tema limpio
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+# Crear el gráfico de línea con colores personalizados para cada mes
+ggplot(data, aes(x = Year, y = Load_Factor, color = factor(Month))) +  
+  geom_line(size = 1) +  # Línea para el Load Factor
+  geom_point(size = 3) +  # Puntos para resaltar los valores
+  scale_color_manual(values = c("1" = "red",     # Enero
+                                "2" = "blue",  # Febrero
+                                "3" = "yellow",  # Marzo
+                                "4" = "black",   # Abril
+                                "5" = "orange",    # Mayo
+                                "6" = "purple",  # Junio
+                                "7" = "violetred4",    # Julio
+                                "8" = "brown",   # Agosto
+                                "9" = "cyan",    # Septiembre
+                                "10" = "magenta",# Octubre
+                                "11" = "seagreen4",   # Noviembre
+                                "12" = "darkorchid3")) +# Diciembre
+  labs(title = "Porcentaje de Puestos Ocupados por Año y Mes",
+       x = "Año",
+       y = "Porcentaje de Puestos Ocupados (%)",
+       color = "Mes") +  # Etiqueta para la leyenda de los colores
+  theme_minimal()  # Tema limpio
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Crear el gráfico de dispersión con una línea de tendencia
+ggplot(data, aes(x = Dom_Pax, y = Int_Pax)) +
+  geom_point() +  # Graficar los puntos
+  geom_smooth(method = "lm", col = "red") +  # Agregar línea de tendencia (regresión lineal)
+  labs(title = "Correlación entre Pasajeros Nacionales e Internacionales", 
+       x = "Pax Doméstico", 
+       y = "Pax Internacional") +
+  theme_minimal() +  # Tema limpio para el gráfico
+  scale_x_continuous(labels = scales::comma) +  # Evitar notación científica en el eje X
+  scale_y_continuous(labels = scales::comma)  # Evitar notación científica en el eje Y
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Calcular el coeficiente de correlación de Pearson
+correlation <- cor(data$Dom_Pax, data$Int_Pax)
+print(paste("Coeficiente de correlación entre Pasajeros Naciones e Internacionales:", correlation))
+
+
+data$YearMonth <- paste(data$Year, data$Month, sep = "-")
+
+
+
+
+
+```
+<br>
+<br>
+<br>
+***La siguiente gráfica muestra un comporativo de comportamientos de la cantidad de pasajeros***
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+
+# 1. Serie completa (incluye 2020-2021)
+data_all <- data %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax)) %>%
+  mutate(Serie = "Incluye 2020-2021")
+
+# 2. Serie sin pandemia (excluye 2020-2021)
+data_no_pandemia <- data %>%
+  filter(!Year %in% c(2020, 2021)) %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax)) %>%
+  mutate(Serie = "Sin 2020-2021")
+
+# 3. Solo desde 2022 en adelante
+data_post_pandemia <- data %>%
+  filter(Year %in% c(2022, 2023)) %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax)) %>%
+  mutate(Serie = "Desde 2022")
+
+# Unir todas las series
+data_combined <- bind_rows(data_all, data_no_pandemia, data_post_pandemia)
+
+# Graficar
+ggplot(data_combined, aes(x = factor(Year), y = Pax, color = Serie, group = Serie)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  labs(title = "Evolución de Pasajeros por Año",
+       x = "Año",
+       y = "Cantidad de Pasajeros (Pax)",
+       color = "Serie") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    plot.margin = margin(10, 10, 10, 40)
+  )
+
+##############
+
+```
+<br>
+<br>
+<br>
+***Esta gráfica muestra el comportamiento total de los pasajeros por año***
+
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+# Agrupar los datos por Año y calcular la cantidad total de pasajeros (Pax) por año
+data_yearly <- data %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax))  # Sumar los pasajeros por cada año
+
+# Crear el gráfico de líneas con datos por año
+ggplot(data_yearly, aes(x = factor(Year), y = Pax, group = 1)) +
+  geom_line(color = "blue") +  # Graficar la línea
+  geom_point(color = "red") +   # Agregar los puntos en la línea
+  labs(title = "Cantidad de Pasajeros vs Año", 
+       x = "Año", 
+       y = "Cantidad de Pasajeros (Pax)") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +  # Evitar notación científica en el eje Y
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Ajustar las etiquetas del eje X
+    plot.margin = margin(10, 10, 10, 40)  # Ajustar márgenes para dar más espacio a las etiquetas
+  )
+
+```
+<br>
+<br>
+<br>
+***Esta gráfica muestra el comportamiento total de los pasajeros exluyendo 2020 y 2021 por la pandemia***
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Filtrar los datos para excluir los años 2020 y 2021
+data_filtered <- data %>%
+  filter(!Year %in% c(2020, 2021))
+
+# Agrupar los datos por Año y calcular la cantidad total de pasajeros (Pax) por año
+data_yearly <- data_filtered %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax))  # Sumar los pasajeros por cada año
+
+# Crear el gráfico de líneas con datos por año (sin 2020 y 2021)
+ggplot(data_yearly, aes(x = factor(Year), y = Pax, group = 1)) +
+  geom_line(color = "blue") +  # Graficar la línea
+  geom_point(color = "red") +   # Agregar los puntos en la línea
+  labs(title = "Cantidad de Pasajeros vs Año", 
+       x = "Año", 
+       y = "Cantidad de Pasajeros (Pax)") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +  # Evitar notación científica en el eje Y
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Ajustar las etiquetas del eje X
+    plot.margin = margin(10, 10, 10, 40)  # Ajustar márgenes para dar más espacio a las etiquetas
+  )
+
+##ecliur meses y no años
+
+# Asegúrate de que tu columna de fecha es de tipo Date
+data$Fecha <- as.Date(paste(data$Year, data$Month, "01", sep = "-"))
+
+# Filtrar para excluir desde 2020-02 hasta 2021-05
+data_filtered <- data %>%
+  filter(!(Fecha >= as.Date("2020-02-01") & Fecha <= as.Date("2021-05-01")))
+
+# Agrupar por año y sumar pasajeros
+data_yearly <- data_filtered %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax))
+
+# Gráfico
+ggplot(data_yearly, aes(x = factor(Year), y = Pax, group = 1)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red") +
+  labs(
+    title = "Cantidad de Pasajeros vs Año sin meses",
+    x = "Año",
+    y = "Cantidad de Pasajeros (Pax)"
+  ) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+    plot.margin = margin(10, 10, 10, 40)
+  )
+
+```
+<br>
+<br>
+<br>
+***Esta gráfica muestra el comportamiento total de los pasajero desde el 2022***
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Filtrar los datos para incluir solo los años 2021, 2022 y 2023
+data_filtered <- data %>%
+  filter(Year %in% c( 2022, 2023))
+
+# Agrupar los datos por Año y calcular la cantidad total de pasajeros (Pax) por año
+data_yearly <- data_filtered %>%
+  group_by(Year) %>%
+  summarise(Pax = sum(Pax))  # Sumar los pasajeros por cada año
+
+# Crear el gráfico de líneas con datos por año (solo 2021, 2022 y 2023)
+ggplot(data_yearly, aes(x = factor(Year), y = Pax, group = 1)) +
+  geom_line(color = "blue") +  # Graficar la línea
+  geom_point(color = "red") +   # Agregar los puntos en la línea
+  labs(title = "Cantidad de Pasajeros vs Año", 
+       x = "Año", 
+       y = "Cantidad de Pasajeros (Pax)") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +  # Evitar notación científica en el eje Y
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10),  # Ajustar las etiquetas del eje X
+    plot.margin = margin(10, 10, 10, 40)  # Ajustar márgenes para dar más espacio a las etiquetas
+  )
+
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+# Agrupar los datos por año y sumar los pasajeros domésticos y pasajeros internacionales por año
+data_grouped <- data %>%
+ ## filter(Year %in% c(2021, 2022, 2023)) %>%  # Filtrar años si es necesario
+  group_by(Year) %>%
+  summarise(
+    Total_Dom_Pax = sum(Dom_Pax),
+    Total_Int_Pax = sum(Int_Pax)
+  )
+
+# Crear un gráfico de barras
+ggplot(data_grouped, aes(x = factor(Year))) + 
+  geom_bar(aes(y = Total_Dom_Pax, fill = "Dom_Pax"), stat = "identity", position = "dodge") +
+  geom_bar(aes(y = Total_Int_Pax, fill = "Int_Pax"), stat = "identity", position = "dodge") +
+  labs(title = "Cantidad de Pasajeros por Año: Domésticos vs Internacionales",
+       x = "Año",
+       y = "Cantidad de Pasajeros",
+       fill = "Tipo de Pasajero") +
+  scale_fill_manual(values = c("Dom_Pax" = "blue", "Int_Pax" = "red")) +  # Colores personalizados
+  scale_y_continuous(labels = scales::comma) +  # Evitar notación científica en el eje Y
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Rotar las etiquetas del eje X para mejorar la legibilidad
+    plot.margin = margin(10, 10, 10, 40)  # Ajustar márgenes para dar más espacio a las etiquetas del eje X
+  )
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+##blox
+ggplot(data, aes(y = Pax, x = "Total")) +
+  geom_boxplot(fill = "lightgreen", color = "black") +
+  geom_boxplot(aes(y = Dom_Pax, x = "Nacionales"), fill = "skyblue", color = "black") +
+  geom_boxplot(aes(y = Int_Pax, x = "Internacional"), fill = "lightcoral", color = "black") +
+  labs(title = "Distribución de Pasajeros por Tipo", x = "Tipo de Pasajero", y = "Cantidad de Pasajeros") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) # Formatea el eje Y con comas
+###################
+#head(data)
+
+# Convertir la columna 'Year' a formato de fecha (si no lo está)
+
+
+# Crear una columna 'Date' para combinar año y mes
+#data$Date <- as.Date(paste0(data$Year, "-", data$Month, "-01"))
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+head(data)
+
+```
+***Una vez analizado los datos historicos y el compartamientos visto a tráves de las gráficas y viendo el comportamiento anormal producto de la pandemia, he decidio hacer la predicciones referente a la catidad de pasajeros por año excluyendo los año 2020-2021 que fectarían el comportamiento normal de pasajeros a nivel Intero e Interno de USA.***
+<br>
+<br>
+***Para este estudio solo considerare las variables de año, mes y total de pasajeros (Dom_pax)***
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+#procedo a elimnar las columnas que no voy a usar
+# Eliminar las columnas especificadas
+data <- data %>%
+  select(-Dom_Flt, -Int_Flt, -Flt, -Dom_RPM, -Int_RPM, -RPM, 
+         -Dom_ASM, -Int_ASM, -ASM, -Dom_LF, -Int_LF, -LF,-Dom_Pax, -Int_Pax,-Load_Factor,-YearMonth)
+
+ #Filtrar los registros con años mayores a 2020
+#data <- data %>%
+ # filter(Year > 2020)
+data2<-data
+
+data  <- data %>%
+  filter(!Year %in% c(2020, 2021))
+
+##head(data)
+# Crear una copia del dataframe original
+dataset <- data
+
+# Eliminar las comas de las columnas numéricas
+# Usamos sapply para aplicar la función a cada columna
+dataset[] <- lapply(dataset, function(x) {
+  if (is.character(x)) {
+    # Eliminar las comas solo en columnas de tipo carácter
+    return(as.numeric(gsub(",", "", x)))
+  } else {
+    return(x)  # Si la columna no es de texto, la dejamos igual
+  }
+})
+
+# Verificar el resultado
+head(dataset)
+str(dataset)
+summary(dataset)
+
+```
+<br>
+<br>
+<br>
+
+***Se identifican los Outliers para las variables de estudios***
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+detect_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  
+  lower_limit <- Q1 - 1.5 * IQR
+  upper_limit <- Q3 + 1.5 * IQR
+  
+  # Contar los outliers
+  outliers <- sum(x < lower_limit | x > upper_limit, na.rm = TRUE)
+  return(outliers)
+}
+
+
+# Aplicar la función de outliers a cada columna numérica y mostrar los resultados
+outlier_counts <- dataset %>%
+  select(where(is.numeric)) %>%
+  summarise(across(everything(), ~ detect_outliers(.))) %>%
+  gather(key = "Variable", value = "Outliers") %>%
+  mutate(Outliers = paste(Variable, "tiene", Outliers, "outliers"))
+
+# Imprimir cada mensaje de outliers en una nueva línea
+for (outlier_message in outlier_counts$Outliers) {
+  print(outlier_message)
+}
+
+
+```
+<br>
+<br>
+<br>
+
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+ggplot(data, aes(x = factor(Year), y = Pax)) +
+  geom_boxplot(fill = "lightblue", color = "blue", alpha = 0.7) +  # Caja y bigotes
+  labs(title = "Boxplot de Pax por Año (sin outliers significativos)",
+       x = "Año",
+       y = "Cantidad de Pasajeros (Pax)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotar etiquetas del eje X
+  scale_y_continuous(labels = label_number(scale = 1, suffix = ""))  # Evitar notación científica en eje Y
+
+```
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+ggplot(data, aes(y = Pax)) +
+  geom_boxplot(fill = "lightblue", color = "blue", alpha = 0.7) +  # Caja y bigotes
+  labs(title = "Boxplot de Pax (Sin Agrupación por Año)",
+       x = "",
+       y = "Cantidad de Pasajeros (Pax)") +
+  theme_minimal() +
+  scale_y_continuous(labels = label_number(scale = 1, suffix = ""))  # Evitar notación científica en eje Y
+
+```
+<br>
+<br>
+<br>
+
+
+<br>
+<br>
+<br>
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+# Medidas de tendencia central
+media_pax <- round(mean(dataset$Pax), 2)
+mediana_pax <- round(median(dataset$Pax), 2)
+
+# Medidas de dispersión
+desviacion_estandar_pax <- round(sd(dataset$Pax), 2)
+varianza_pax <- round(var(dataset$Pax), 2)
+rango_pax <- round(diff(range(dataset$Pax)), 2)
+
+# Imprimir los resultados con formato de coma
+print(paste("Media de Pax:", format(media_pax, big.mark = ",")))
+print(paste("Mediana de Pax:", format(mediana_pax, big.mark = ",")))
+print(paste("Desviación estándar de Pax:", format(desviacion_estandar_pax, big.mark = ",")))
+print(paste("Varianza de Pax:", format(varianza_pax, big.mark = ",")))
+print(paste("Rango de Pax:", format(rango_pax, big.mark = ",")))
+
+write.csv(data2, "C:/Users/Administrador/Desktop/UTP-R/Herramientas para visualización de datos/air_traffic_final.csv", row.names = FALSE)
+
+```
+<br>
+<br>
